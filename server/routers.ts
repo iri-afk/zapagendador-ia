@@ -1,13 +1,37 @@
-import { COOKIE_NAME } from "@shared/const";
+import { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router, protectedProcedure } from "./_core/trpc";
+import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import * as db from "./db";
 import { notifyOwner } from "./_core/notification";
 import { generateOllamaResponse } from "./ollama";
 import { nanoid } from "nanoid";
 import { storagePut } from "./storage";
+import { sdk } from "./_core/sdk";
+import { hashPassword, verifyPassword } from "./_core/localAuth";
+import type { TrpcContext } from "./_core/context";
+
+function slugify(input: string): string {
+  return input
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "") // remove acentos
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80);
+}
+
+async function startSession(
+  ctx: Pick<TrpcContext, "req" | "res">,
+  openId: string,
+  name: string
+) {
+  const sessionToken = await sdk.createSessionToken(openId, { name, expiresInMs: ONE_YEAR_MS });
+  const cookieOptions = getSessionCookieOptions(ctx.req);
+  ctx.res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
+}
 
 export const appRouter = router({
   system: systemRouter,
@@ -77,7 +101,11 @@ export const appRouter = router({
       }),
   }),
   auth: router({
-    me: publicProcedure.query((opts) => opts.ctx.user),
+    me: publicProcedure.query((opts) => {
+      if (!opts.ctx.user) return null;
+      const { password: _password, ...safeUser } = opts.ctx.user;
+      return safeUser;
+    }),
     logout: publicProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
@@ -85,6 +113,76 @@ export const appRouter = router({
         success: true,
       } as const;
     }),
+
+    register: publicProcedure
+      .input(
+        z.object({
+          name: z.string().trim().min(2, "Informe seu nome"),
+          email: z.string().trim().toLowerCase().email("Email inválido"),
+          password: z.string().min(8, "A senha precisa ter no mínimo 8 caracteres"),
+          businessName: z.string().trim().min(2, "Informe o nome do seu negócio"),
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        const existingUser = await db.getUserByEmail(input.email);
+        if (existingUser) {
+          throw new TRPCError({ code: "CONFLICT", message: "Este email já está cadastrado" });
+        }
+
+        // Cria o tenant (negócio) do novo usuário, garantindo slug único
+        const slugBase = slugify(input.businessName) || `negocio-${nanoid(6)}`;
+        let slug = slugBase;
+        let suffix = 1;
+        while (await db.getTenantBySlug(slug)) {
+          slug = `${slugBase}-${suffix}`;
+          suffix += 1;
+        }
+
+        await db.createTenant({
+          name: input.businessName,
+          slug,
+          email: input.email,
+          isActive: true,
+        });
+        const tenant = await db.getTenantBySlug(slug);
+        if (!tenant) {
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Falha ao criar o negócio" });
+        }
+
+        const openId = `local_${nanoid()}`;
+        const user = await db.createLocalUser({
+          openId,
+          name: input.name,
+          email: input.email,
+          password: hashPassword(input.password),
+          tenantId: tenant.id,
+        });
+        if (!user) {
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Falha ao criar o usuário" });
+        }
+
+        await startSession(ctx, openId, input.name);
+
+        return { success: true } as const;
+      }),
+
+    login: publicProcedure
+      .input(
+        z.object({
+          email: z.string().trim().toLowerCase().email("Email inválido"),
+          password: z.string().min(1, "Informe sua senha"),
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        const user = await db.getUserByEmail(input.email);
+        if (!user || !user.password || !verifyPassword(input.password, user.password)) {
+          throw new TRPCError({ code: "UNAUTHORIZED", message: "Email ou senha incorretos" });
+        }
+
+        await startSession(ctx, user.openId, user.name ?? "");
+
+        return { success: true } as const;
+      }),
   }),
 
   // ============ TENANT ROUTES ============

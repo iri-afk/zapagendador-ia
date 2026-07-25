@@ -22,6 +22,7 @@ export const users = mysqlTable("users", {
   name: text("name"),
   email: varchar("email", { length: 320 }).unique(),
   phone: varchar("phone", { length: 20 }),
+  password: varchar("password", { length: 255 }), // scrypt hash "salt:hash", null para contas antigas via OAuth
   loginMethod: varchar("loginMethod", { length: 64 }),
   role: mysqlEnum("role", ["platform_admin", "business_owner", "staff"]).default("business_owner").notNull(),
   tenantId: int("tenantId"),

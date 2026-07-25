@@ -1,0 +1,811 @@
+diff --git a/client/src/App.tsx b/client/src/App.tsx
+index 0c1c789..e8f78d3 100644
+--- a/client/src/App.tsx
++++ b/client/src/App.tsx
+@@ -11,11 +11,15 @@ import Documents from "./pages/Documents";
+ import Services from "./pages/Services";
+ import Settings from "./pages/Settings";
+ import AITeste from "./pages/AITeste";
++import Login from "./pages/Login";
++import Register from "./pages/Register";
+ 
+ function Router() {
+   return (
+     <Switch>
+       <Route path="/" component={Home} />
++      <Route path="/login" component={Login} />
++      <Route path="/registro" component={Register} />
+       <Route path="/appointments" component={Appointments} />
+       <Route path="/customers" component={Customers} />
+       <Route path="/documents" component={Documents} />
+diff --git a/client/src/_core/hooks/useAuth.ts b/client/src/_core/hooks/useAuth.ts
+index 6ad61d9..c6e30dd 100644
+--- a/client/src/_core/hooks/useAuth.ts
++++ b/client/src/_core/hooks/useAuth.ts
+@@ -1,5 +1,4 @@
+ import { trpc } from "@/lib/trpc";
+-import { getLoginUrl } from "@/const";
+ import { useCallback, useEffect, useMemo } from "react";
+ import { useLocation } from "wouter";
+ 
+@@ -10,6 +9,7 @@ type UseAuthOptions = {
+ 
+ export function useAuth(options?: UseAuthOptions) {
+   const [, setLocation] = useLocation();
++  const utils = trpc.useUtils();
+   const userQuery = trpc.auth.me.useQuery();
+ 
+   useEffect(() => {
+@@ -17,21 +17,13 @@ export function useAuth(options?: UseAuthOptions) {
+     if (userQuery.isLoading) return;
+     if (userQuery.data) return;
+ 
+-    if (options?.redirectPath) {
+-      setLocation(options.redirectPath);
+-      return;
+-    }
+-
+-    if (typeof window !== "undefined") {
+-      window.location.href = getLoginUrl();
+-    }
++    setLocation(options?.redirectPath ?? "/login");
+   }, [options?.redirectOnUnauthenticated, options?.redirectPath, setLocation, userQuery.data, userQuery.isLoading]);
+ 
+   const logoutMutation = trpc.auth.logout.useMutation({
+     onSuccess: () => {
+-      if (typeof window !== "undefined") {
+-        window.location.href = getLoginUrl();
+-      }
++      utils.auth.me.setData(undefined, null);
++      setLocation("/login");
+     },
+   });
+ 
+@@ -44,7 +36,6 @@ export function useAuth(options?: UseAuthOptions) {
+     };
+   }, [userQuery.data, userQuery.error, userQuery.isLoading]);
+ 
+-  // 3. Retornamos a chave-mestra sem fazer o useEffect redirecionar
+   return {
+     ...state,
+     refresh: useCallback(async () => {
+diff --git a/client/src/components/DashboardLayout.tsx b/client/src/components/DashboardLayout.tsx
+index 6251255..5115f00 100644
+--- a/client/src/components/DashboardLayout.tsx
++++ b/client/src/components/DashboardLayout.tsx
+@@ -19,7 +19,6 @@ import {
+   SidebarTrigger,
+   useSidebar,
+ } from "@/components/ui/sidebar";
+-import { getLoginUrl } from "@/const";
+ import { useIsMobile } from "@/hooks/useMobile";
+ import { Bot, CalendarDays, FileText, LayoutDashboard, LogOut, PanelLeft, Settings, Users, Scissors } from "lucide-react";
+ import { CSSProperties, useEffect, useRef, useState } from "react";
+@@ -52,6 +51,7 @@ export default function DashboardLayout({
+     return saved ? parseInt(saved, 10) : DEFAULT_WIDTH;
+   });
+   const { loading, user } = useAuth();
++  const [, setLocation] = useLocation();
+ 
+   useEffect(() => {
+     localStorage.setItem(SIDEBAR_WIDTH_KEY, sidebarWidth.toString());
+@@ -67,20 +67,18 @@ export default function DashboardLayout({
+         <div className="flex flex-col items-center gap-8 p-8 max-w-md w-full">
+           <div className="flex flex-col items-center gap-6">
+             <h1 className="text-2xl font-semibold tracking-tight text-center">
+-              Sign in to continue
++              Faça login para continuar
+             </h1>
+             <p className="text-sm text-muted-foreground text-center max-w-sm">
+-              Access to this dashboard requires authentication. Continue to launch the login flow.
++              O acesso a este painel requer autenticação.
+             </p>
+           </div>
+           <Button
+-            onClick={() => {
+-              window.location.href = getLoginUrl();
+-            }}
++            onClick={() => setLocation("/login")}
+             size="lg"
+             className="w-full shadow-lg hover:shadow-xl transition-all"
+           >
+-            Sign in
++            Ir para login
+           </Button>
+         </div>
+       </div>
+diff --git a/client/src/const.ts b/client/src/const.ts
+index 9999063..cf5934a 100644
+--- a/client/src/const.ts
++++ b/client/src/const.ts
+@@ -1,17 +1 @@
+ export { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
+-
+-// Generate login URL at runtime so redirect URI reflects the current origin.
+-export const getLoginUrl = () => {
+-  const oauthPortalUrl = import.meta.env.VITE_OAUTH_PORTAL_URL;
+-  const appId = import.meta.env.VITE_APP_ID;
+-  const redirectUri = `${window.location.origin}/api/oauth/callback`;
+-  const state = btoa(redirectUri);
+-
+-  const url = new URL(`${oauthPortalUrl}/app-auth`);
+-  url.searchParams.set("appId", appId);
+-  url.searchParams.set("redirectUri", redirectUri);
+-  url.searchParams.set("state", state);
+-  url.searchParams.set("type", "signIn");
+-
+-  return url.toString();
+-};
+diff --git a/client/src/main.tsx b/client/src/main.tsx
+index 8adf6f5..06a7346 100644
+--- a/client/src/main.tsx
++++ b/client/src/main.tsx
+@@ -5,7 +5,6 @@ import { httpBatchLink, TRPCClientError } from "@trpc/client";
+ import { createRoot } from "react-dom/client";
+ import superjson from "superjson";
+ import App from "./App";
+-import { getLoginUrl } from "./const";
+ import "./index.css";
+ 
+ const queryClient = new QueryClient();
+@@ -17,8 +16,9 @@ const redirectToLoginIfUnauthorized = (error: unknown) => {
+   const isUnauthorized = error.message === UNAUTHED_ERR_MSG;
+ 
+   if (!isUnauthorized) return;
++  if (window.location.pathname === "/login" || window.location.pathname === "/registro") return;
+ 
+-  window.location.href = getLoginUrl();
++  window.location.href = "/login";
+ };
+ 
+ queryClient.getQueryCache().subscribe(event => {
+diff --git a/client/src/pages/AITeste.tsx b/client/src/pages/AITeste.tsx
+index 6da42ee..cfb0154 100644
+--- a/client/src/pages/AITeste.tsx
++++ b/client/src/pages/AITeste.tsx
+@@ -5,10 +5,10 @@ import { Badge } from "@/components/ui/badge";
+ import { Label } from "@/components/ui/label";
+ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+ import { AIChatBox, type Message } from "@/components/AIChatBox";
+-import { getLoginUrl } from "@/const";
+ import { trpc } from "@/lib/trpc";
+ import { Bot, Loader2, RefreshCcw, Sparkles, ShieldCheck } from "lucide-react";
+ import { useEffect, useMemo, useState } from "react";
++import { useLocation } from "wouter";
+ 
+ type AiResult = {
+   intencao: "agendar" | "cancelar" | "remarcar" | "duvida" | "outro";
+@@ -19,6 +19,7 @@ type AiResult = {
+ };
+ 
+ export default function AITeste() {
++  const [, navigate] = useLocation();
+   const [messages, setMessages] = useState<Message[]>([
+     {
+       role: "assistant",
+@@ -315,11 +316,11 @@ export default function AITeste() {
+             <Card>
+               <CardHeader>
+                 <CardTitle className="text-base">Atalho de acesso</CardTitle>
+-                <CardDescription>Se a sessão do servidor não estiver ativa, abra o login do portal.</CardDescription>
++                <CardDescription>Se a sessão não estiver ativa, entre novamente.</CardDescription>
+               </CardHeader>
+               <CardContent>
+-                <Button variant="outline" className="w-full" onClick={() => window.location.href = getLoginUrl()}>
+-                  Abrir login do portal
++                <Button variant="outline" className="w-full" onClick={() => navigate("/login")}>
++                  Ir para login
+                 </Button>
+               </CardContent>
+             </Card>
+diff --git a/client/src/pages/Home.tsx b/client/src/pages/Home.tsx
+index 89d4ead..98c7587 100644
+--- a/client/src/pages/Home.tsx
++++ b/client/src/pages/Home.tsx
+@@ -2,7 +2,6 @@ import { useAuth } from "@/_core/hooks/useAuth";
+ import DashboardLayout from "@/components/DashboardLayout";
+ import { Button } from "@/components/ui/button";
+ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+-import { getLoginUrl } from "@/const";
+ import { Calendar, FileText, Users, Clock, TrendingUp, MessageSquare, Settings } from "lucide-react";
+ import { Loader2 } from "lucide-react";
+ import { useLocation } from "wouter";
+@@ -64,12 +63,21 @@ export default function Home() {
+               </div>
+             </div>
+ 
+-            <Button
+-              onClick={() => window.location.href = getLoginUrl()}
+-              className="w-full h-12 text-base font-semibold"
+-            >
+-              Fazer Login
+-            </Button>
++            <div className="flex flex-col gap-3">
++              <Button
++                onClick={() => navigate("/login")}
++                className="w-full h-12 text-base font-semibold"
++              >
++                Entrar
++              </Button>
++              <Button
++                onClick={() => navigate("/registro")}
++                variant="outline"
++                className="w-full h-12 text-base font-semibold"
++              >
++                Criar conta
++              </Button>
++            </div>
+           </div>
+ 
+           <p className="text-center text-sm text-slate-600">
+diff --git a/client/src/pages/Login.tsx b/client/src/pages/Login.tsx
+new file mode 100644
+index 0000000..7da5e9b
+--- /dev/null
++++ b/client/src/pages/Login.tsx
+@@ -0,0 +1,109 @@
++import { useEffect, useState } from "react";
++import { useLocation, Link } from "wouter";
++import { useAuth } from "@/_core/hooks/useAuth";
++import { trpc } from "@/lib/trpc";
++import { Button } from "@/components/ui/button";
++import { Input } from "@/components/ui/input";
++import { Label } from "@/components/ui/label";
++import { Alert, AlertDescription } from "@/components/ui/alert";
++import { AlertCircle, Loader2, MessageSquare } from "lucide-react";
++
++export default function Login() {
++  const [, navigate] = useLocation();
++  const { isAuthenticated, loading: authLoading } = useAuth();
++  const utils = trpc.useUtils();
++
++  const [email, setEmail] = useState("");
++  const [password, setPassword] = useState("");
++  const [error, setError] = useState<string | null>(null);
++
++  useEffect(() => {
++    if (!authLoading && isAuthenticated) {
++      navigate("/");
++    }
++  }, [authLoading, isAuthenticated, navigate]);
++
++  const loginMutation = trpc.auth.login.useMutation({
++    onSuccess: async () => {
++      await utils.auth.me.invalidate();
++      navigate("/");
++    },
++    onError: (err) => {
++      setError(err.message || "Não foi possível entrar. Tente novamente.");
++    },
++  });
++
++  function handleSubmit(e: React.FormEvent) {
++    e.preventDefault();
++    setError(null);
++    loginMutation.mutate({ email, password });
++  }
++
++  return (
++    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex flex-col items-center justify-center px-4">
++      <div className="max-w-md w-full space-y-8">
++        <div className="text-center">
++          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 mb-4">
++            <MessageSquare className="w-8 h-8 text-primary" />
++          </div>
++          <h1 className="text-3xl font-bold text-slate-900 mb-2">Entrar</h1>
++          <p className="text-slate-600">Acesse o painel do ZapAgendador IA</p>
++        </div>
++
++        <form onSubmit={handleSubmit} className="bg-white rounded-lg shadow-lg p-8 space-y-5">
++          {error && (
++            <Alert variant="destructive">
++              <AlertCircle className="h-4 w-4" />
++              <AlertDescription>{error}</AlertDescription>
++            </Alert>
++          )}
++
++          <div className="space-y-2">
++            <Label htmlFor="email">Email</Label>
++            <Input
++              id="email"
++              type="email"
++              autoComplete="email"
++              required
++              value={email}
++              onChange={(e) => setEmail(e.target.value)}
++              placeholder="voce@empresa.com"
++            />
++          </div>
++
++          <div className="space-y-2">
++            <Label htmlFor="password">Senha</Label>
++            <Input
++              id="password"
++              type="password"
++              autoComplete="current-password"
++              required
++              value={password}
++              onChange={(e) => setPassword(e.target.value)}
++              placeholder="••••••••"
++            />
++          </div>
++
++          <Button
++            type="submit"
++            className="w-full h-12 text-base font-semibold"
++            disabled={loginMutation.isPending}
++          >
++            {loginMutation.isPending ? (
++              <Loader2 className="w-5 h-5 animate-spin" />
++            ) : (
++              "Entrar"
++            )}
++          </Button>
++        </form>
++
++        <p className="text-center text-sm text-slate-600">
++          Não tem conta?{" "}
++          <Link href="/registro" className="text-primary font-medium hover:underline">
++            Criar conta
++          </Link>
++        </p>
++      </div>
++    </div>
++  );
++}
+diff --git a/client/src/pages/Register.tsx b/client/src/pages/Register.tsx
+new file mode 100644
+index 0000000..51e6305
+--- /dev/null
++++ b/client/src/pages/Register.tsx
+@@ -0,0 +1,162 @@
++import { useEffect, useState } from "react";
++import { useLocation, Link } from "wouter";
++import { useAuth } from "@/_core/hooks/useAuth";
++import { trpc } from "@/lib/trpc";
++import { Button } from "@/components/ui/button";
++import { Input } from "@/components/ui/input";
++import { Label } from "@/components/ui/label";
++import { Alert, AlertDescription } from "@/components/ui/alert";
++import { AlertCircle, Loader2, MessageSquare } from "lucide-react";
++
++export default function Register() {
++  const [, navigate] = useLocation();
++  const { isAuthenticated, loading: authLoading } = useAuth();
++  const utils = trpc.useUtils();
++
++  const [name, setName] = useState("");
++  const [businessName, setBusinessName] = useState("");
++  const [email, setEmail] = useState("");
++  const [password, setPassword] = useState("");
++  const [confirmPassword, setConfirmPassword] = useState("");
++  const [error, setError] = useState<string | null>(null);
++
++  useEffect(() => {
++    if (!authLoading && isAuthenticated) {
++      navigate("/");
++    }
++  }, [authLoading, isAuthenticated, navigate]);
++
++  const registerMutation = trpc.auth.register.useMutation({
++    onSuccess: async () => {
++      await utils.auth.me.invalidate();
++      navigate("/");
++    },
++    onError: (err) => {
++      setError(err.message || "Não foi possível criar sua conta. Tente novamente.");
++    },
++  });
++
++  function handleSubmit(e: React.FormEvent) {
++    e.preventDefault();
++    setError(null);
++
++    if (password.length < 8) {
++      setError("A senha precisa ter no mínimo 8 caracteres");
++      return;
++    }
++    if (password !== confirmPassword) {
++      setError("As senhas não conferem");
++      return;
++    }
++
++    registerMutation.mutate({ name, email, password, businessName });
++  }
++
++  return (
++    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex flex-col items-center justify-center px-4 py-10">
++      <div className="max-w-md w-full space-y-8">
++        <div className="text-center">
++          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 mb-4">
++            <MessageSquare className="w-8 h-8 text-primary" />
++          </div>
++          <h1 className="text-3xl font-bold text-slate-900 mb-2">Criar conta</h1>
++          <p className="text-slate-600">Comece a automatizar seus agendamentos</p>
++        </div>
++
++        <form onSubmit={handleSubmit} className="bg-white rounded-lg shadow-lg p-8 space-y-5">
++          {error && (
++            <Alert variant="destructive">
++              <AlertCircle className="h-4 w-4" />
++              <AlertDescription>{error}</AlertDescription>
++            </Alert>
++          )}
++
++          <div className="space-y-2">
++            <Label htmlFor="name">Seu nome</Label>
++            <Input
++              id="name"
++              type="text"
++              autoComplete="name"
++              required
++              value={name}
++              onChange={(e) => setName(e.target.value)}
++              placeholder="Maria Silva"
++            />
++          </div>
++
++          <div className="space-y-2">
++            <Label htmlFor="businessName">Nome do seu negócio</Label>
++            <Input
++              id="businessName"
++              type="text"
++              autoComplete="organization"
++              required
++              value={businessName}
++              onChange={(e) => setBusinessName(e.target.value)}
++              placeholder="Salão da Maria"
++            />
++          </div>
++
++          <div className="space-y-2">
++            <Label htmlFor="email">Email</Label>
++            <Input
++              id="email"
++              type="email"
++              autoComplete="email"
++              required
++              value={email}
++              onChange={(e) => setEmail(e.target.value)}
++              placeholder="voce@empresa.com"
++            />
++          </div>
++
++          <div className="space-y-2">
++            <Label htmlFor="password">Senha</Label>
++            <Input
++              id="password"
++              type="password"
++              autoComplete="new-password"
++              required
++              minLength={8}
++              value={password}
++              onChange={(e) => setPassword(e.target.value)}
++              placeholder="Mínimo 8 caracteres"
++            />
++          </div>
++
++          <div className="space-y-2">
++            <Label htmlFor="confirmPassword">Confirmar senha</Label>
++            <Input
++              id="confirmPassword"
++              type="password"
++              autoComplete="new-password"
++              required
++              value={confirmPassword}
++              onChange={(e) => setConfirmPassword(e.target.value)}
++              placeholder="Repita a senha"
++            />
++          </div>
++
++          <Button
++            type="submit"
++            className="w-full h-12 text-base font-semibold"
++            disabled={registerMutation.isPending}
++          >
++            {registerMutation.isPending ? (
++              <Loader2 className="w-5 h-5 animate-spin" />
++            ) : (
++              "Criar conta"
++            )}
++          </Button>
++        </form>
++
++        <p className="text-center text-sm text-slate-600">
++          Já tem conta?{" "}
++          <Link href="/login" className="text-primary font-medium hover:underline">
++            Entrar
++          </Link>
++        </p>
++      </div>
++    </div>
++  );
++}
+diff --git a/drizzle/0003_add_users_password.sql b/drizzle/0003_add_users_password.sql
+new file mode 100644
+index 0000000..31ff502
+--- /dev/null
++++ b/drizzle/0003_add_users_password.sql
+@@ -0,0 +1 @@
++ALTER TABLE `users` ADD `password` varchar(255);
+diff --git a/drizzle/schema.ts b/drizzle/schema.ts
+index 4733499..c16a815 100644
+--- a/drizzle/schema.ts
++++ b/drizzle/schema.ts
+@@ -22,6 +22,7 @@ export const users = mysqlTable("users", {
+   name: text("name"),
+   email: varchar("email", { length: 320 }).unique(),
+   phone: varchar("phone", { length: 20 }),
++  password: varchar("password", { length: 255 }), // scrypt hash "salt:hash", null para contas antigas via OAuth
+   loginMethod: varchar("loginMethod", { length: 64 }),
+   role: mysqlEnum("role", ["platform_admin", "business_owner", "staff"]).default("business_owner").notNull(),
+   tenantId: int("tenantId"),
+diff --git a/server/_core/localAuth.ts b/server/_core/localAuth.ts
+new file mode 100644
+index 0000000..7c56206
+--- /dev/null
++++ b/server/_core/localAuth.ts
+@@ -0,0 +1,26 @@
++import { randomBytes, scryptSync, timingSafeEqual } from "crypto";
++
++/**
++ * Password hashing for local email/password auth.
++ * Uses Node's built-in scrypt (no extra dependency like bcrypt needed).
++ * Stored format: "<salt-hex>:<derivedKey-hex>"
++ */
++
++const KEY_LENGTH = 64;
++
++export function hashPassword(password: string): string {
++  const salt = randomBytes(16).toString("hex");
++  const derivedKey = scryptSync(password, salt, KEY_LENGTH);
++  return `${salt}:${derivedKey.toString("hex")}`;
++}
++
++export function verifyPassword(password: string, stored: string): boolean {
++  const [salt, hashHex] = stored.split(":");
++  if (!salt || !hashHex) return false;
++
++  const storedKey = Buffer.from(hashHex, "hex");
++  const derivedKey = scryptSync(password, salt, KEY_LENGTH);
++
++  if (storedKey.length !== derivedKey.length) return false;
++  return timingSafeEqual(storedKey, derivedKey);
++}
+diff --git a/server/_core/sdk.ts b/server/_core/sdk.ts
+index 230e762..1e4c424 100644
+--- a/server/_core/sdk.ts
++++ b/server/_core/sdk.ts
+@@ -29,14 +29,9 @@ const GET_USER_INFO_PATH = `/webdev.v1.WebDevAuthPublicService/GetUserInfo`;
+ const GET_USER_INFO_WITH_JWT_PATH = `/webdev.v1.WebDevAuthPublicService/GetUserInfoWithJwt`;
+ 
+ class OAuthService {
+-  constructor(private client: ReturnType<typeof axios.create>) {
+-    console.log("[OAuth] Initialized with baseURL:", ENV.oAuthServerUrl);
+-    if (!ENV.oAuthServerUrl) {
+-      console.error(
+-        "[OAuth] ERROR: OAUTH_SERVER_URL is not configured! Set OAUTH_SERVER_URL environment variable."
+-      );
+-    }
+-  }
++  // Unused now that auth is local (email/senha) — kept only so
++  // exchangeCodeForToken/getUserInfo still compile if referenced later.
++  constructor(private client: ReturnType<typeof axios.create>) {}
+ 
+   private decodeState(state: string): string {
+     const redirectUri = atob(state);
+@@ -268,26 +263,10 @@ class SDKServer {
+ 
+     const sessionUserId = session.openId;
+     const signedInAt = new Date();
+-    let user = await db.getUserByOpenId(sessionUserId);
+-
+-    // If user not in DB, sync from OAuth server automatically
+-    if (!user) {
+-      try {
+-        const userInfo = await this.getUserInfoWithJwt(sessionCookie ?? "");
+-        await db.upsertUser({
+-          openId: userInfo.openId,
+-          name: userInfo.name || null,
+-          email: userInfo.email ?? null,
+-          loginMethod: userInfo.loginMethod ?? userInfo.platform ?? null,
+-          lastSignedIn: signedInAt,
+-        });
+-        user = await db.getUserByOpenId(userInfo.openId);
+-      } catch (error) {
+-        console.error("[Auth] Failed to sync user from OAuth:", error);
+-        throw ForbiddenError("Failed to sync user info");
+-      }
+-    }
++    const user = await db.getUserByOpenId(sessionUserId);
+ 
++    // Local auth: the user must already exist (created at register time).
++    // There's no external OAuth server left to sync unknown sessions from.
+     if (!user) {
+       throw ForbiddenError("User not found");
+     }
+diff --git a/server/db.ts b/server/db.ts
+index 28983b2..ad3459e 100644
+--- a/server/db.ts
++++ b/server/db.ts
+@@ -107,6 +107,47 @@ export async function getUserByOpenId(openId: string) {
+   return result.length > 0 ? result[0] : undefined;
+ }
+ 
++export async function getUserByEmail(email: string) {
++  const db = await getDb();
++  if (!db) return undefined;
++
++  const result = await db
++    .select()
++    .from(users)
++    .where(eq(users.email, email))
++    .limit(1);
++
++  return result.length > 0 ? result[0] : undefined;
++}
++
++/**
++ * Creates a user with a local email/password identity (no OAuth).
++ * `password` must already be hashed (see server/_core/localAuth.ts).
++ */
++export async function createLocalUser(data: {
++  openId: string;
++  name: string;
++  email: string;
++  password: string;
++  tenantId: number;
++}) {
++  const db = await getDb();
++  if (!db) throw new Error("Database not available");
++
++  await db.insert(users).values({
++    openId: data.openId,
++    name: data.name,
++    email: data.email,
++    password: data.password,
++    tenantId: data.tenantId,
++    role: "business_owner",
++    loginMethod: "email",
++    lastSignedIn: new Date(),
++  });
++
++  return getUserByEmail(data.email);
++}
++
+ // ============ TENANT QUERIES ============
+ 
+ export async function getTenantById(tenantId: number) {
+diff --git a/server/routers.ts b/server/routers.ts
+index 3f3d60f..f48a11c 100644
+--- a/server/routers.ts
++++ b/server/routers.ts
+@@ -1,13 +1,37 @@
+-import { COOKIE_NAME } from "@shared/const";
++import { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
+ import { getSessionCookieOptions } from "./_core/cookies";
+ import { systemRouter } from "./_core/systemRouter";
+ import { publicProcedure, router, protectedProcedure } from "./_core/trpc";
++import { TRPCError } from "@trpc/server";
+ import { z } from "zod";
+ import * as db from "./db";
+ import { notifyOwner } from "./_core/notification";
+ import { generateOllamaResponse } from "./ollama";
+ import { nanoid } from "nanoid";
+ import { storagePut } from "./storage";
++import { sdk } from "./_core/sdk";
++import { hashPassword, verifyPassword } from "./_core/localAuth";
++import type { TrpcContext } from "./_core/context";
++
++function slugify(input: string): string {
++  return input
++    .toLowerCase()
++    .normalize("NFD")
++    .replace(/[\u0300-\u036f]/g, "") // remove acentos
++    .replace(/[^a-z0-9]+/g, "-")
++    .replace(/^-+|-+$/g, "")
++    .slice(0, 80);
++}
++
++async function startSession(
++  ctx: Pick<TrpcContext, "req" | "res">,
++  openId: string,
++  name: string
++) {
++  const sessionToken = await sdk.createSessionToken(openId, { name, expiresInMs: ONE_YEAR_MS });
++  const cookieOptions = getSessionCookieOptions(ctx.req);
++  ctx.res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
++}
+ 
+ export const appRouter = router({
+   system: systemRouter,
+@@ -77,7 +101,11 @@ export const appRouter = router({
+       }),
+   }),
+   auth: router({
+-    me: publicProcedure.query((opts) => opts.ctx.user),
++    me: publicProcedure.query((opts) => {
++      if (!opts.ctx.user) return null;
++      const { password: _password, ...safeUser } = opts.ctx.user;
++      return safeUser;
++    }),
+     logout: publicProcedure.mutation(({ ctx }) => {
+       const cookieOptions = getSessionCookieOptions(ctx.req);
+       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
+@@ -85,6 +113,76 @@ export const appRouter = router({
+         success: true,
+       } as const;
+     }),
++
++    register: publicProcedure
++      .input(
++        z.object({
++          name: z.string().trim().min(2, "Informe seu nome"),
++          email: z.string().trim().toLowerCase().email("Email inválido"),
++          password: z.string().min(8, "A senha precisa ter no mínimo 8 caracteres"),
++          businessName: z.string().trim().min(2, "Informe o nome do seu negócio"),
++        })
++      )
++      .mutation(async ({ input, ctx }) => {
++        const existingUser = await db.getUserByEmail(input.email);
++        if (existingUser) {
++          throw new TRPCError({ code: "CONFLICT", message: "Este email já está cadastrado" });
++        }
++
++        // Cria o tenant (negócio) do novo usuário, garantindo slug único
++        const slugBase = slugify(input.businessName) || `negocio-${nanoid(6)}`;
++        let slug = slugBase;
++        let suffix = 1;
++        while (await db.getTenantBySlug(slug)) {
++          slug = `${slugBase}-${suffix}`;
++          suffix += 1;
++        }
++
++        await db.createTenant({
++          name: input.businessName,
++          slug,
++          email: input.email,
++          isActive: true,
++        });
++        const tenant = await db.getTenantBySlug(slug);
++        if (!tenant) {
++          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Falha ao criar o negócio" });
++        }
++
++        const openId = `local_${nanoid()}`;
++        const user = await db.createLocalUser({
++          openId,
++          name: input.name,
++          email: input.email,
++          password: hashPassword(input.password),
++          tenantId: tenant.id,
++        });
++        if (!user) {
++          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Falha ao criar o usuário" });
++        }
++
++        await startSession(ctx, openId, input.name);
++
++        return { success: true } as const;
++      }),
++
++    login: publicProcedure
++      .input(
++        z.object({
++          email: z.string().trim().toLowerCase().email("Email inválido"),
++          password: z.string().min(1, "Informe sua senha"),
++        })
++      )
++      .mutation(async ({ input, ctx }) => {
++        const user = await db.getUserByEmail(input.email);
++        if (!user || !user.password || !verifyPassword(input.password, user.password)) {
++          throw new TRPCError({ code: "UNAUTHORIZED", message: "Email ou senha incorretos" });
++        }
++
++        await startSession(ctx, user.openId, user.name ?? "");
++
++        return { success: true } as const;
++      }),
+   }),
+ 
+   // ============ TENANT ROUTES ============

@@ -30,7 +30,7 @@ export async function generateOllamaResponse(
   clientName: string,
   servicosDisponiveis: string[] = []
 ): Promise<AgendamentoIA> {
-  const OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434';
+  const OLLAMA_URL = process.env.OLLAMA_URL || 'http://0.0.0.0:11434';
   const MODEL = process.env.OLLAMA_MODEL || 'gemma2:2b';
 
   const historicoTexto = history

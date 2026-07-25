@@ -107,6 +107,47 @@ export async function getUserByOpenId(openId: string) {
   return result.length > 0 ? result[0] : undefined;
 }
 
+export async function getUserByEmail(email: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  const result = await db
+    .select()
+    .from(users)
+    .where(eq(users.email, email))
+    .limit(1);
+
+  return result.length > 0 ? result[0] : undefined;
+}
+
+/**
+ * Creates a user with a local email/password identity (no OAuth).
+ * `password` must already be hashed (see server/_core/localAuth.ts).
+ */
+export async function createLocalUser(data: {
+  openId: string;
+  name: string;
+  email: string;
+  password: string;
+  tenantId: number;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  await db.insert(users).values({
+    openId: data.openId,
+    name: data.name,
+    email: data.email,
+    password: data.password,
+    tenantId: data.tenantId,
+    role: "business_owner",
+    loginMethod: "email",
+    lastSignedIn: new Date(),
+  });
+
+  return getUserByEmail(data.email);
+}
+
 // ============ TENANT QUERIES ============
 
 export async function getTenantById(tenantId: number) {

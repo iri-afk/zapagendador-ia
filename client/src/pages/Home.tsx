@@ -2,7 +2,6 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { getLoginUrl } from "@/const";
 import { Calendar, FileText, Users, Clock, TrendingUp, MessageSquare, Settings } from "lucide-react";
 import { Loader2 } from "lucide-react";
 import { useLocation } from "wouter";
@@ -64,12 +63,21 @@ export default function Home() {
               </div>
             </div>
 
-            <Button
-              onClick={() => window.location.href = getLoginUrl()}
-              className="w-full h-12 text-base font-semibold"
-            >
-              Fazer Login
-            </Button>
+            <div className="flex flex-col gap-3">
+              <Button
+                onClick={() => navigate("/login")}
+                className="w-full h-12 text-base font-semibold"
+              >
+                Entrar
+              </Button>
+              <Button
+                onClick={() => navigate("/registro")}
+                variant="outline"
+                className="w-full h-12 text-base font-semibold"
+              >
+                Criar conta
+              </Button>
+            </div>
           </div>
 
           <p className="text-center text-sm text-slate-600">

@@ -12,7 +12,7 @@ import {
 
 export const webhookRouter = Router();
 
-const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || 'http://localhost:3333';
+const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || 'http://0.0.0.0:3333';
 const EVOLUTION_API_TOKEN = process.env.EVOLUTION_API_TOKEN || '';
 const WHATSAPP_VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN || '';
 

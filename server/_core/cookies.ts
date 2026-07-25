@@ -1,6 +1,6 @@
 import type { CookieOptions, Request } from "express";
 
-const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
+const LOCAL_HOSTS = new Set(["0.0.0.0", "127.0.0.1", "::1"]);
 
 function isIpAddress(host: string) {
   // Basic IPv4 check and IPv6 presence detection.

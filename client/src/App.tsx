@@ -11,11 +11,15 @@ import Documents from "./pages/Documents";
 import Services from "./pages/Services";
 import Settings from "./pages/Settings";
 import AITeste from "./pages/AITeste";
+import Login from "./pages/Login";
+import Register from "./pages/Register";
 
 function Router() {
   return (
     <Switch>
       <Route path="/" component={Home} />
+      <Route path="/login" component={Login} />
+      <Route path="/registro" component={Register} />
       <Route path="/appointments" component={Appointments} />
       <Route path="/customers" component={Customers} />
       <Route path="/documents" component={Documents} />

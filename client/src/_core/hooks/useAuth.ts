@@ -1,5 +1,4 @@
 import { trpc } from "@/lib/trpc";
-import { getLoginUrl } from "@/const";
 import { useCallback, useEffect, useMemo } from "react";
 import { useLocation } from "wouter";
 
@@ -10,6 +9,7 @@ type UseAuthOptions = {
 
 export function useAuth(options?: UseAuthOptions) {
   const [, setLocation] = useLocation();
+  const utils = trpc.useUtils();
   const userQuery = trpc.auth.me.useQuery();
 
   useEffect(() => {
@@ -17,21 +17,13 @@ export function useAuth(options?: UseAuthOptions) {
     if (userQuery.isLoading) return;
     if (userQuery.data) return;
 
-    if (options?.redirectPath) {
-      setLocation(options.redirectPath);
-      return;
-    }
-
-    if (typeof window !== "undefined") {
-      window.location.href = getLoginUrl();
-    }
+    setLocation(options?.redirectPath ?? "/login");
   }, [options?.redirectOnUnauthenticated, options?.redirectPath, setLocation, userQuery.data, userQuery.isLoading]);
 
   const logoutMutation = trpc.auth.logout.useMutation({
     onSuccess: () => {
-      if (typeof window !== "undefined") {
-        window.location.href = getLoginUrl();
-      }
+      utils.auth.me.setData(undefined, null);
+      setLocation("/login");
     },
   });
 
@@ -44,7 +36,6 @@ export function useAuth(options?: UseAuthOptions) {
     };
   }, [userQuery.data, userQuery.error, userQuery.isLoading]);
 
-  // 3. Retornamos a chave-mestra sem fazer o useEffect redirecionar
   return {
     ...state,
     refresh: useCallback(async () => {

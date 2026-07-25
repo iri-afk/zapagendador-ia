@@ -5,10 +5,10 @@ import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AIChatBox, type Message } from "@/components/AIChatBox";
-import { getLoginUrl } from "@/const";
 import { trpc } from "@/lib/trpc";
 import { Bot, Loader2, RefreshCcw, Sparkles, ShieldCheck } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { useLocation } from "wouter";
 
 type AiResult = {
   intencao: "agendar" | "cancelar" | "remarcar" | "duvida" | "outro";
@@ -19,6 +19,7 @@ type AiResult = {
 };
 
 export default function AITeste() {
+  const [, navigate] = useLocation();
   const [messages, setMessages] = useState<Message[]>([
     {
       role: "assistant",
@@ -315,11 +316,11 @@ export default function AITeste() {
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">Atalho de acesso</CardTitle>
-                <CardDescription>Se a sessão do servidor não estiver ativa, abra o login do portal.</CardDescription>
+                <CardDescription>Se a sessão não estiver ativa, entre novamente.</CardDescription>
               </CardHeader>
               <CardContent>
-                <Button variant="outline" className="w-full" onClick={() => window.location.href = getLoginUrl()}>
-                  Abrir login do portal
+                <Button variant="outline" className="w-full" onClick={() => navigate("/login")}>
+                  Ir para login
                 </Button>
               </CardContent>
             </Card>
