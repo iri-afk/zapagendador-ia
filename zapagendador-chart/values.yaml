@@ -1,0 +1,23 @@
+replicaCount: 2
+
+image:
+  repository: git.irndevs.com/irn/zapagendador-ia
+  tag: latest
+  pullPolicy: IfNotPresent
+
+service:
+  type: NodePort
+  port: 3000
+  nodePort: 30085
+
+env:
+  OLLAMA_HOST: "http://ollama-service:11434"
+  DB_HOST: "mysql-service"
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi

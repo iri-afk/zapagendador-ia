@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: zapagendador
+  labels:
+    app: zapagendador
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: zapagendador
+  template:
+    metadata:
+      labels:
+        app: zapagendador
+    spec:
+      containers:
+        - name: zapagendador
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: 3000
+          env:
+            - name: OLLAMA_HOST
+              value: {{ .Values.env.OLLAMA_HOST | quote }}
+            - name: DB_HOST
+              value: {{ .Values.env.DB_HOST | quote }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
