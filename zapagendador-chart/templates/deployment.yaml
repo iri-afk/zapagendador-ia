@@ -21,9 +21,9 @@ spec:
           ports:
             - containerPort: 3000
           env:
-            - name: OLLAMA_HOST
-              value: {{ .Values.env.OLLAMA_HOST | quote }}
-            - name: DB_HOST
-              value: {{ .Values.env.DB_HOST | quote }}
+            {{- range $key, $value := .Values.env }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}

@@ -11,8 +11,11 @@ service:
   nodePort: 30085
 
 env:
-  OLLAMA_HOST: "http://ollama-service:11434"
-  DB_HOST: "mysql-service"
+  NODE_ENV: "production"
+  PORT: "3000"
+  DATABASE_URL: "mysql://root:senha123@192.168.137.190:3306/zapagendador"
+  OLLAMA_URL: "http://192.168.137.190:11434"
+  JWT_SECRET: "chave-secreta-123"
 
 resources:
   requests:
