@@ -8,7 +8,6 @@ import * as db from "./db";
 import { notifyOwner } from "./_core/notification";
 import { generateOllamaResponse } from "./ollama";
 import { nanoid } from "nanoid";
-import { storagePut } from "./storage";
 import { sdk } from "./_core/sdk";
 import { hashPassword, verifyPassword } from "./_core/localAuth";
 import type { TrpcContext } from "./_core/context";
@@ -319,6 +318,9 @@ export const appRouter = router({
 
         // Notify owner
         const notificationSent = await notifyOwner({
+          tenantId: input.tenantId,
+          appointmentId: appointment.id,
+          type: "new_booking",
           title: "New Booking Request",
           content: `A new booking request has been received. Please review it in your dashboard.`,
         });
@@ -653,10 +655,6 @@ export const appRouter = router({
         const base64 = input.fileDataBase64.includes(",")
           ? input.fileDataBase64.split(",").pop() ?? input.fileDataBase64
           : input.fileDataBase64;
-        const fileBuffer = Buffer.from(base64, "base64");
-        const safeFileName = input.fileName.replace(/[^a-zA-Z0-9._-]+/g, "_");
-        const storageKey = `tenants/${input.tenantId}/documents/${Date.now()}-${nanoid(8)}-${safeFileName}`;
-        const { key, url } = await storagePut(storageKey, fileBuffer, input.fileType);
 
         return db.createDocument({
           tenantId: input.tenantId,
@@ -666,8 +664,7 @@ export const appRouter = router({
           fileName: input.fileName,
           fileType: input.fileType,
           fileSize: input.fileSize,
-          s3Key: key,
-          s3Url: url,
+          fileData: base64,
           documentType: input.documentType,
           isPublic: false,
         });

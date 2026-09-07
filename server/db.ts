@@ -107,6 +107,19 @@ export async function getUserByOpenId(openId: string) {
   return result.length > 0 ? result[0] : undefined;
 }
 
+export async function getOwnerByTenant(tenantId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  const result = await db
+    .select()
+    .from(users)
+    .where(and(eq(users.tenantId, tenantId), eq(users.role, "business_owner")))
+    .limit(1);
+
+  return result.length > 0 ? result[0] : undefined;
+}
+
 export async function getUserByEmail(email: string) {
   const db = await getDb();
   if (!db) return undefined;

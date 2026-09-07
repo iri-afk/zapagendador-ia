@@ -1,5 +1,4 @@
-import { TRPCError } from "@trpc/server";
-import { ENV } from "./env";
+import { createNotification, getOwnerByTenant } from "../db";
 
 export type NotificationPayload = {
   title: string;
@@ -9,102 +8,52 @@ export type NotificationPayload = {
 const TITLE_MAX_LENGTH = 1200;
 const CONTENT_MAX_LENGTH = 20000;
 
-const trimValue = (value: string): string => value.trim();
 const isNonEmptyString = (value: unknown): value is string =>
   typeof value === "string" && value.trim().length > 0;
 
-const buildEndpointUrl = (baseUrl: string): string => {
-  const normalizedBase = baseUrl.endsWith("/")
-    ? baseUrl
-    : `${baseUrl}/`;
-  return new URL(
-    "webdevtoken.v1.WebDevService/SendNotification",
-    normalizedBase
-  ).toString();
-};
-
-const validatePayload = (input: NotificationPayload): NotificationPayload => {
-  if (!isNonEmptyString(input.title)) {
-    throw new TRPCError({
-      code: "BAD_REQUEST",
-      message: "Notification title is required.",
-    });
-  }
-  if (!isNonEmptyString(input.content)) {
-    throw new TRPCError({
-      code: "BAD_REQUEST",
-      message: "Notification content is required.",
-    });
-  }
-
-  const title = trimValue(input.title);
-  const content = trimValue(input.content);
-
-  if (title.length > TITLE_MAX_LENGTH) {
-    throw new TRPCError({
-      code: "BAD_REQUEST",
-      message: `Notification title must be at most ${TITLE_MAX_LENGTH} characters.`,
-    });
-  }
-
-  if (content.length > CONTENT_MAX_LENGTH) {
-    throw new TRPCError({
-      code: "BAD_REQUEST",
-      message: `Notification content must be at most ${CONTENT_MAX_LENGTH} characters.`,
-    });
-  }
-
-  return { title, content };
-};
-
 /**
- * Dispatches a project-owner notification through the Manus Notification Service.
- * Returns `true` if the request was accepted, `false` when the upstream service
- * cannot be reached (callers can fall back to email/slack). Validation errors
- * bubble up as TRPC errors so callers can fix the payload.
+ * Dispatches a project-owner notification by writing directly to the
+ * `notifications` table. Returns `true` if the notification was recorded,
+ * `false` if the tenant has no owner user or the payload was invalid.
  */
 export async function notifyOwner(
-  payload: NotificationPayload
+  payload: NotificationPayload & {
+    tenantId: number;
+    appointmentId?: number;
+    type?: "new_booking" | "booking_modified" | "booking_cancelled" | "reminder" | "system";
+  }
 ): Promise<boolean> {
-  const { title, content } = validatePayload(payload);
+  const { title, content, tenantId, appointmentId, type } = payload;
 
-  if (!ENV.forgeApiUrl) {
-    console.warn("[Notification] Service URL is not configured; skipping owner notification.");
+  if (!isNonEmptyString(title) || !isNonEmptyString(content)) {
+    console.warn("[Notification] Missing title or content; skipping.");
+    return false;
+  }
+  if (title.length > TITLE_MAX_LENGTH || content.length > CONTENT_MAX_LENGTH) {
+    console.warn("[Notification] Title or content too long; skipping.");
     return false;
   }
 
-  if (!ENV.forgeApiKey) {
-    console.warn("[Notification] Service API key is not configured; skipping owner notification.");
+  const owner = await getOwnerByTenant(tenantId);
+  if (!owner) {
+    console.warn(`[Notification] No owner found for tenant ${tenantId}; skipping.`);
     return false;
   }
-
-  const endpoint = buildEndpointUrl(ENV.forgeApiUrl);
 
   try {
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        accept: "application/json",
-        authorization: `Bearer ${ENV.forgeApiKey}`,
-        "content-type": "application/json",
-        "connect-protocol-version": "1",
-      },
-      body: JSON.stringify({ title, content }),
+    await createNotification({
+      tenantId,
+      userId: owner.id,
+      appointmentId: appointmentId ?? null,
+      type: type ?? "system",
+      title: title.trim(),
+      message: content.trim(),
+      isRead: false,
+      emailSent: false,
     });
-
-    if (!response.ok) {
-      const detail = await response.text().catch(() => "");
-      console.warn(
-        `[Notification] Failed to notify owner (${response.status} ${response.statusText})${
-          detail ? `: ${detail}` : ""
-        }`
-      );
-      return false;
-    }
-
     return true;
   } catch (error) {
-    console.warn("[Notification] Error calling notification service:", error);
+    console.warn("[Notification] Error writing notification:", error);
     return false;
   }
 }

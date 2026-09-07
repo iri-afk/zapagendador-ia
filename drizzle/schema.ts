@@ -10,6 +10,7 @@ import {
   json,
   datetime,
   tinyint,
+  mediumtext,
 } from "drizzle-orm/mysql-core";
 
 /**
@@ -187,8 +188,9 @@ export const documents = mysqlTable("documents", {
   fileName: varchar("fileName", { length: 255 }).notNull(),
   fileType: varchar("fileType", { length: 50 }).notNull(), // MIME type
   fileSize: int("fileSize").notNull(), // Size in bytes
-  s3Key: varchar("s3Key", { length: 500 }).notNull(),
-  s3Url: text("s3Url").notNull(),
+  s3Key: varchar("s3Key", { length: 500 }),
+  s3Url: text("s3Url"),
+  fileData: mediumtext("fileData"),
   documentType: varchar("documentType", { length: 100 }), // e.g., "proof", "receipt", "contract"
   isPublic: boolean("isPublic").default(false).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
